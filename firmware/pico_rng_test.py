@@ -10,6 +10,7 @@
 
 import usb.core
 import usb.util
+import random
 
 # find our device
 dev = usb.core.find(idVendor=0x0000, idProduct=0x0004)
@@ -41,8 +42,9 @@ inep = usb.util.find_descriptor(
 assert inep is not None
 assert outep is not None
 
-test_string = "Hello World!"
-outep.write(test_string)
-from_device = inep.read(len(test_string))
+num_bytes = random.randint(0,65)
 
-print("Device Says: {}".format(''.join([chr(x) for x in from_device])))
+outep.write([num_bytes], 500)
+from_device = inep.read(num_bytes, 500)
+
+print(":".join("{:02x}".format(b) for b in from_device))

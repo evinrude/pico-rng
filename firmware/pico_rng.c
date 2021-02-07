@@ -8,6 +8,8 @@
 
 // Pico
 #include "pico/stdlib.h"
+#include "hardware/gpio.h"
+#include "hardware/adc.h"
 
 // For memcpy
 #include <string.h>
@@ -538,11 +540,42 @@ void ep0_out_handler(uint8_t *buf, uint16_t len) {
 
 // Device specific functions
 void ep1_out_handler(uint8_t *buf, uint16_t len) {
-    printf("RX %d bytes from host\n", len);
-    char *new_buf = "Got yo data";
-    // Send data back to host
+    uint16_t new_buf[40];
+    uint16_t adc_result;
+    uint8_t size;
+    int i;
+
+    printf("RX %d bytes from host %d \n", len, *buf);
+
+    gpio_put(25, 1);
+
+    if(len != 1)
+    {
+        //TODO handle length error
+        size = 64;
+    }
+    else
+    {
+        size = *buf;
+        if(size == 0 || size > 64)
+        {
+            //TODO handle requested size error
+            size =  64;
+        }
+    }
+
+    memset(new_buf, 0, 40);
+    for(i = 1; i < (size / 2) + 4; i++)
+    {
+        adc_result = adc_read();
+        memcpy(&new_buf[i-1], (void*)&adc_result, sizeof(uint16_t));
+    }
+
+    gpio_put(25, 0);
+
+    // Send random data back to the host
     struct usb_endpoint_configuration *ep = usb_get_endpoint_configuration(EP2_IN_ADDR);
-    usb_start_transfer(ep, new_buf, 11);
+    usb_start_transfer(ep, (char*)new_buf, size);
 }
 
 void ep2_in_handler(uint8_t *buf, uint16_t len) {
@@ -553,6 +586,16 @@ void ep2_in_handler(uint8_t *buf, uint16_t len) {
 
 int main(void) {
     stdio_init_all();
+
+    // Builtin GPIO
+    gpio_init(25);
+    gpio_set_dir(25, GPIO_OUT);
+
+    // ADC
+    adc_init();
+    adc_gpio_init(26);
+    adc_select_input(0);
+
     printf("USB pico rng\n");
     usb_device_init();
 
