@@ -42,7 +42,7 @@ inep = usb.util.find_descriptor(
 assert inep is not None
 assert outep is not None
 
-num_bytes = random.randint(0,65)
+num_bytes = random.randint(1,64)
 
 outep.write([num_bytes], 500)
 from_device = inep.read(num_bytes, 500)
