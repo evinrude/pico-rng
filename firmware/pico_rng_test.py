@@ -1,50 +1,44 @@
 #!/usr/bin/env python3
 
-#
-# Copyright (c) 2020 Raspberry Pi (Trading) Ltd.
-#
-# SPDX-License-Identifier: BSD-3-Clause
-#
-
-# sudo pip3 install pyusb
-
 import usb.core
 import usb.util
 import random
+import time
+import argparse
 
-# find our device
-dev = usb.core.find(idVendor=0x0000, idProduct=0x0004)
+# Parser stuff
+parser = argparse.ArgumentParser(description="Raspberry Pi Pico Random Number Generator Test Tool")
+parser.add_argument("--performance", action="store_true", help="Performance test the RNG.")
+args = parser.parse_args()
 
-# was it found?
-if dev is None:
-    raise ValueError('Device not found')
+# Get the device
+rng = usb.core.find(idVendor=0x0000, idProduct=0x0004)
+assert rng is not None
 
-# get an endpoint instance
-cfg = dev.get_active_configuration()
-intf = cfg[(0, 0)]
+# Get the configuration of the device
+cfg = rng.get_active_configuration()
 
-outep = usb.util.find_descriptor(
-    intf,
-    # match the first OUT endpoint
-    custom_match= \
-        lambda e: \
-            usb.util.endpoint_direction(e.bEndpointAddress) == \
-            usb.util.ENDPOINT_OUT)
+# Get the only interface of our device
+intf = cfg.interfaces()[0]
 
-inep = usb.util.find_descriptor(
-    intf,
-    # match the first IN endpoint
-    custom_match= \
-        lambda e: \
-            usb.util.endpoint_direction(e.bEndpointAddress) == \
-            usb.util.ENDPOINT_IN)
+# Get the endpoints
+endpts = intf.endpoints()
 
-assert inep is not None
-assert outep is not None
+# Get the IN or Host RCV Device TX endpoint
+endpts_in = endpts[0] if endpts[0].bEndpointAddress == usb.util.ENDPOINT_IN else endpts[1]
 
-num_bytes = random.randint(1,64)
+# Time tracking for bits/s
+count = 0
+start_time = (int(time.time()) - 1)
 
-outep.write([num_bytes], 500)
-from_device = inep.read(num_bytes, 500)
-
-print(":".join("{:02x}".format(b) for b in from_device))
+if args.performance:
+    while True:
+        try:
+            from_device = endpts_in.read(endpts_in.wMaxPacketSize, 500)
+            count = count+1
+            print(":".join("{:02x}".format(b) for b in from_device), end="")
+            print(" KBps {0:.2f}".format((int((count * 64) / (int(time.time()) - start_time))) / 1024 ))
+        except KeyboardInterrupt:
+            exit(0)
+else:
+    print(":".join("{:02x}".format(b) for b in endpts_in.read(endpts_in.wMaxPacketSize, 500)))

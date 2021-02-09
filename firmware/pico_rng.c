@@ -578,10 +578,38 @@ void ep1_out_handler(uint8_t *buf, uint16_t len) {
     usb_start_transfer(ep, (char*)new_buf, size);
 }
 
+void get_random_data(char *buffer, uint16_t len) {
+    uint16_t adc_result;
+    uint8_t size;
+    int i;
+
+    gpio_put(25, 1);
+
+    if(len > 64)
+    {
+        //TODO handle length error
+        size = 64;
+    }
+
+    memset(buffer, 0, len);
+    for(i = 1; i <= len; i=i+1)
+    {
+        adc_result = adc_read();
+        memcpy(&buffer[i-1], (void*)&adc_result, 2);
+    }
+
+    gpio_put(25, 0);
+}
+
 void ep2_in_handler(uint8_t *buf, uint16_t len) {
     printf("Sent %d bytes to host\n", len);
     // Get ready to rx again from host
-    usb_start_transfer(usb_get_endpoint_configuration(EP1_OUT_ADDR), NULL, 64);
+
+    char buffer[64];
+    get_random_data(buffer, 64);
+    //usb_start_transfer(usb_get_endpoint_configuration(EP1_OUT_ADDR), NULL, 64);
+    struct usb_endpoint_configuration *ep = usb_get_endpoint_configuration(EP2_IN_ADDR);
+    usb_start_transfer(ep, buffer, 64);
 }
 
 int main(void) {
@@ -604,8 +632,12 @@ int main(void) {
         tight_loop_contents();
     }
 
-    // Get ready to rx from host
-    usb_start_transfer(usb_get_endpoint_configuration(EP1_OUT_ADDR), NULL, 64);
+    char buffer[64];
+
+    // Get ready to tx
+    get_random_data(buffer, 64);
+    usb_start_transfer(usb_get_endpoint_configuration(EP2_IN_ADDR), buffer, 64);
+    //usb_start_transfer(usb_get_endpoint_configuration(EP1_OUT_ADDR), NULL, 64);
 
     // Everything is interrupt driven so just loop here
     while (1) {
