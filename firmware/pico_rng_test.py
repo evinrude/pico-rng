@@ -21,11 +21,8 @@ cfg = rng.get_active_configuration()
 # Get the only interface of our device
 intf = cfg.interfaces()[0]
 
-# Get the endpoints
-endpts = intf.endpoints()
-
-# Get the IN or Host RCV Device TX endpoint
-endpts_in = endpts[0] if endpts[0].bEndpointAddress == usb.util.ENDPOINT_IN else endpts[1]
+# Get the endpoint
+endpt = intf.endpoints()[0]
 
 # Time tracking for bits/s
 count = 0
@@ -34,11 +31,11 @@ start_time = (int(time.time()) - 1)
 if args.performance:
     while True:
         try:
-            from_device = endpts_in.read(endpts_in.wMaxPacketSize, 500)
+            from_device = endpt.read(endpt.wMaxPacketSize, 500)
             count = count+1
             print(":".join("{:02x}".format(b) for b in from_device), end="")
             print(" KBps {0:.2f}".format((int((count * 64) / (int(time.time()) - start_time))) / 1024 ))
         except KeyboardInterrupt:
             exit(0)
 else:
-    print(":".join("{:02x}".format(b) for b in endpts_in.read(endpts_in.wMaxPacketSize, 500)))
+    print(":".join("{:02x}".format(b) for b in endpt.read(endpt.wMaxPacketSize, 500)))

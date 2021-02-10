@@ -32,11 +32,9 @@
 #define usb_hw_clear hw_clear_alias(usb_hw)
 
 // Function prototypes for our device specific endpoint handlers defined
-// later on
 void ep0_in_handler(uint8_t *buf, uint16_t len);
 void ep0_out_handler(uint8_t *buf, uint16_t len);
-void ep1_out_handler(uint8_t *buf, uint16_t len);
-void ep2_in_handler(uint8_t *buf, uint16_t len);
+void ep1_in_handler(uint8_t *buf, uint16_t len);
 
 // Global device address
 static bool should_set_address = false;
@@ -45,6 +43,9 @@ static volatile bool configured = false;
 
 // Global data buffer for EP0
 static uint8_t ep0_buf[64];
+
+// Global data buffer for EP1
+static uint8_t ep1_buf[64];
 
 // Struct defining the device configuration
 static struct usb_device_configuration dev_config = {
@@ -71,21 +72,12 @@ static struct usb_device_configuration dev_config = {
                         .data_buffer = &usb_dpram->ep0_buf_a[0],
                 },
                 {
-                        .descriptor = &ep1_out,
-                        .handler = &ep1_out_handler,
-                        // EP1 starts at offset 0 for endpoint control
-                        .endpoint_control = &usb_dpram->ep_ctrl[0].out,
-                        .buffer_control = &usb_dpram->ep_buf_ctrl[1].out,
+                        .descriptor = &ep1_in,
+                        .handler = &ep1_in_handler,
+                        .endpoint_control = &usb_dpram->ep_ctrl[0].in,
+                        .buffer_control = &usb_dpram->ep_buf_ctrl[1].in,
                         // First free EPX buffer
-                        .data_buffer = &usb_dpram->epx_data[0 * 64],
-                },
-                {
-                        .descriptor = &ep2_in,
-                        .handler = &ep2_in_handler,
-                        .endpoint_control = &usb_dpram->ep_ctrl[1].in,
-                        .buffer_control = &usb_dpram->ep_buf_ctrl[2].in,
-                        // Second free EPX buffer
-                        .data_buffer = &usb_dpram->epx_data[1 * 64],
+                        .data_buffer = &usb_dpram->epx_data[0],
                 }
         }
 };
@@ -534,51 +526,24 @@ void ep0_in_handler(uint8_t *buf, uint16_t len) {
     }
 }
 
+/**
+ * @brief EP0 out transfer complete.
+ *
+ * @param buf the data that was received
+ * @param len the length that was received
+ */
 void ep0_out_handler(uint8_t *buf, uint16_t len) {
-    ;
+    // Nothing to see here
+    return;
 }
 
-// Device specific functions
-void ep1_out_handler(uint8_t *buf, uint16_t len) {
-    uint16_t new_buf[40];
-    uint16_t adc_result;
-    uint8_t size;
-    int i;
-
-    printf("RX %d bytes from host %d \n", len, *buf);
-
-    gpio_put(25, 1);
-
-    if(len != 1)
-    {
-        //TODO handle length error
-        size = 64;
-    }
-    else
-    {
-        size = *buf;
-        if(size == 0 || size > 64)
-        {
-            //TODO handle requested size error
-            size =  64;
-        }
-    }
-
-    memset(new_buf, 0, 40);
-    for(i = 1; i < (size / 2) + 4; i++)
-    {
-        adc_result = adc_read();
-        memcpy(&new_buf[i-1], (void*)&adc_result, sizeof(uint16_t));
-    }
-
-    gpio_put(25, 0);
-
-    // Send random data back to the host
-    struct usb_endpoint_configuration *ep = usb_get_endpoint_configuration(EP2_IN_ADDR);
-    usb_start_transfer(ep, (char*)new_buf, size);
-}
-
-void get_random_data(char *buffer, uint16_t len) {
+/**
+ * @brief Get random data using the onboard pico ADC.
+ *
+ * @param buf the buffer to store the random data in
+ * @param len the length of the random data in bytes
+ */
+void get_random_data(char *buf, uint16_t len) {
     uint16_t adc_result;
     uint8_t size;
     int i;
@@ -591,28 +556,37 @@ void get_random_data(char *buffer, uint16_t len) {
         size = 64;
     }
 
-    memset(buffer, 0, len);
+    memset(buf, 0, len);
     for(i = 1; i <= len; i=i+1)
     {
         adc_result = adc_read();
-        memcpy(&buffer[i-1], (void*)&adc_result, 2);
+        memcpy(&buf[i-1], (void*)&adc_result, 2);
     }
 
     gpio_put(25, 0);
 }
 
-void ep2_in_handler(uint8_t *buf, uint16_t len) {
-    printf("Sent %d bytes to host\n", len);
-    // Get ready to rx again from host
+/**
+ * @brief EP1 in transfer complete. Prime the EP1 in buffer
+ * with more random data.
+ *
+ * @param buf the data that was sent
+ * @param len the length that was sent
+ */
+void ep1_in_handler(uint8_t *buf, uint16_t len) {
 
-    char buffer[64];
-    get_random_data(buffer, 64);
-    //usb_start_transfer(usb_get_endpoint_configuration(EP1_OUT_ADDR), NULL, 64);
-    struct usb_endpoint_configuration *ep = usb_get_endpoint_configuration(EP2_IN_ADDR);
-    usb_start_transfer(ep, buffer, 64);
+    printf("Sent %d bytes to host\n", len);
+    
+    // Prime the EP1 IN buffer for the next transfer
+    get_random_data(ep1_buf, 64);
+    usb_start_transfer(usb_get_endpoint_configuration(EP1_IN_ADDR), ep1_buf, 64);
 }
 
+/**
+ * @brief This is where it all begins
+ */
 int main(void) {
+    // Enable uart debug messages
     stdio_init_all();
 
     // Builtin GPIO
@@ -632,12 +606,9 @@ int main(void) {
         tight_loop_contents();
     }
 
-    char buffer[64];
-
-    // Get ready to tx
-    get_random_data(buffer, 64);
-    usb_start_transfer(usb_get_endpoint_configuration(EP2_IN_ADDR), buffer, 64);
-    //usb_start_transfer(usb_get_endpoint_configuration(EP1_OUT_ADDR), NULL, 64);
+    // Populate the TX buffer
+    get_random_data(ep1_buf, 64);
+    usb_start_transfer(usb_get_endpoint_configuration(EP1_IN_ADDR), ep1_buf, 64);
 
     // Everything is interrupt driven so just loop here
     while (1) {
