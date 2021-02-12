@@ -5,6 +5,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 
 // Pico
 #include "pico/stdlib.h"
@@ -562,6 +563,23 @@ void get_random_data(char *buf, uint16_t len) {
         adc_result = adc_read();
         memcpy(&buf[i-1], (void*)&adc_result, 2);
     }
+
+    /**
+     * In an attempt to make the rng even more random this will slow down the amount of data the
+     * pico can generate. It appears to be more random, but not good enough for FIPS 140-2.
+     **/ 
+    /**
+    //Use the ADC as a seed to the arm gnu stdlib random number generator
+    srand((int)(adc_read() | (adc_read() << 16)));
+
+    memset(buf, 0, len);
+    int rand_result;
+    for(i = 0; i <= len-4; i=i+4)
+    {
+        rand_result = rand();
+        memcpy(&buf[i], (void*)&rand_result, 4);
+    }
+    **/
 
     gpio_put(25, 0);
 }
