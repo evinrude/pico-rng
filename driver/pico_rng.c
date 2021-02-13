@@ -10,6 +10,8 @@
 #include <linux/kernel.h>
 #include <linux/semaphore.h>
 #include <asm/uaccess.h>
+#include <linux/hw_random.h>
+#include <linux/kthread.h>
 
 
 MODULE_LICENSE("GPL");
@@ -18,13 +20,14 @@ MODULE_DESCRIPTION("Random number generator using a Raspberry Pi Pico");
 MODULE_VERSION("1.0");
 
 /**
- * Static constants
+ * Macros
  **/
 #define VENDOR_ID             0x0
 #define PRODUCT_ID            0x4
+#define PICO_RNG_ENTROPY(x)	  (((x) * 8 * 10) >> 5) /* quality: 10/32 */
 
 /**
- * Helper macros
+ * Logger macros
  **/
 #define LOGGER_INFO(fmt, args ...) printk( KERN_INFO "[info]  %s(%d): " fmt, __FUNCTION__, __LINE__, ## args)
 #define LOGGER_ERR(fmt, args ...) printk( KERN_ERR "[err]  %s(%d): " fmt, __FUNCTION__, __LINE__, ## args)
@@ -46,8 +49,9 @@ struct pico_rng_data {
 	struct usb_device                      *dev;
 	struct usb_interface                   *interface;
 	struct usb_endpoint_descriptor         *endpoint;
-	char                                   *buffer;
+	void                                   *buffer;
 	int                                    pipe;
+	struct task_struct                     *rng_task;
 } module_data;
 
 /**
@@ -58,8 +62,14 @@ static void pico_rng_usb_disconnect(struct usb_interface *interface);
 static int __init pico_rng_driver_init(void);
 static void __exit pico_rng_driver_exit(void);
 
+static int pico_rng_read_data(void);
+
 static ssize_t pico_rng_read(struct file *file, char __user *user_buffer, size_t size, loff_t *offset);
 static int pico_rng_open(struct inode *inode, struct file *file);
+
+static int pico_rng_kthread(void *data);
+void pico_rng_kthread_start(void);
+void pico_rng_kthread_stop(void);
 
 /**
  * Data structure of the USB vid:pid device that we will support
@@ -93,7 +103,7 @@ static struct file_operations pico_rng_fops = {
  * USB class data structure
  **/
  struct usb_class_driver pico_rng_usb_class = {
-	.name           = "pico_rng",
+	.name           = "pico_raw",
 	.fops           = &pico_rng_fops,
 };
 
@@ -107,14 +117,12 @@ static int pico_rng_open(struct inode *inode, struct file *file)
 }
 
 /**
- * File ops:read
- **/
-static ssize_t pico_rng_read(struct file *file, char __user *user_buffer, size_t size, loff_t *offset)
+ * Read data from the pico rng
+ */
+static int pico_rng_read_data()
 {
+    int retval = 0;
 	int actual_length = 0;
-	int retval = 0;
-
-	LOGGER_DEBUG("inside pico_rng_read with file %p, user_buffer %p, size %ld, offset %lld\n", file, user_buffer, size, *offset);
 
     // int usb_bulk_msg(struct usb_device *usb_dev, unsigned int pipe, void *data, int len, int *actual_length, int timeout)
 	LOGGER_DEBUG("Calling usb_bulk_msg dev %p, pipe %d, buffer %p, size %d, and timeout %d", \
@@ -126,19 +134,38 @@ static ssize_t pico_rng_read(struct file *file, char __user *user_buffer, size_t
 						  module_data.endpoint->wMaxPacketSize,
 						  &actual_length,
 						  timeout);
-
-    if(retval)
+	
+	if(retval)
 	{
 		return -EFAULT;
 	}
 
-    LOGGER_DEBUG("Copying %d bytest of random data to userspace with offset %lld\n", actual_length, *offset);
-	if(copy_to_user(user_buffer, module_data.buffer, module_data.endpoint->wMaxPacketSize))
+    return actual_length;
+}
+
+/**
+ * File ops:read
+ **/
+static ssize_t pico_rng_read(struct file *file, char __user *user_buffer, size_t size, loff_t *offset)
+{
+    int bytes_read = 0;
+
+	LOGGER_DEBUG("inside pico_rng_read with file %p, user_buffer %p, size %ld, offset %lld\n", file, user_buffer, size, *offset);
+
+	bytes_read = pico_rng_read_data();
+	if(!bytes_read)
+	{
+		LOGGER_ERR("Failed to read data");
+		return -EFAULT;
+	}
+
+    LOGGER_DEBUG("Copying %d bytest of random data to userspace with offset %lld\n", bytes_read, *offset);
+	if(copy_to_user(user_buffer, module_data.buffer, bytes_read))
 	{
         return -EFAULT;
 	}
 
-    return module_data.endpoint->wMaxPacketSize;
+    return bytes_read;
 }
 
 /**
@@ -192,6 +219,8 @@ static int pico_rng_usb_probe(struct usb_interface *interface, const struct usb_
     // int usb_bulk_msg(struct usb_device *usb_dev, unsigned int pipe, void *data, int len, int *actual_length, int timeout)
     //retval = usb_bulk_msg(dev, pipe, buffer, 64, &actual_length, 500);
 
+	pico_rng_kthread_start();
+
 	return retval;
 }
 
@@ -202,12 +231,66 @@ static int pico_rng_usb_probe(struct usb_interface *interface, const struct usb_
 static void pico_rng_usb_disconnect(struct usb_interface *interface)
 {
 	LOGGER_INFO("pico rng usb device disconnected\n");
+	pico_rng_kthread_stop();
 	usb_deregister_dev(module_data.interface, &pico_rng_usb_class);
 	module_data.dev = NULL;
 	module_data.interface = NULL;
 	module_data.pipe = 0;
 	kfree(module_data.buffer);
 	module_data.buffer = NULL;
+}
+
+/*
+ * Pico rng thread that periodically adds hardware randomness
+ */
+static int pico_rng_kthread(void *data)
+{
+    int bytes_read;
+
+	while (!kthread_should_stop())
+	{
+		bytes_read = pico_rng_read_data();
+		if(!bytes_read)
+		{
+			LOGGER_ERR("Failed to read data\n");
+
+			// sleep for at least a second, max 2 seconds
+			usleep_range(1000000, 2000000);
+
+			continue;
+		}
+
+        LOGGER_DEBUG("Adding hardware randomness\n");
+		add_hwgenerator_randomness(module_data.buffer, bytes_read, PICO_RNG_ENTROPY(bytes_read));
+		LOGGER_DEBUG("Randomness added\n");
+	}
+
+    return 0;
+}
+
+/**
+ * Start the rng thread
+ **/
+void pico_rng_kthread_start()
+{
+    module_data.rng_task = kthread_run(pico_rng_kthread, &module_data, "pico_rng_thread");
+	if(IS_ERR(module_data.rng_task))
+	{
+        module_data.rng_task = NULL;
+		LOGGER_ERR("Failed to launch the pico rng task\n");
+	}
+}
+
+/**
+ * Stop the rng thread
+ **/
+void pico_rng_kthread_stop()
+{
+	if(module_data.rng_task)
+	{
+		kthread_stop(module_data.rng_task);
+		module_data.rng_task = NULL;
+	}
 }
 
 static int __init pico_rng_driver_init(void)

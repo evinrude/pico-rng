@@ -564,6 +564,9 @@ void get_random_data(char *buf, uint16_t len) {
         memcpy(&buf[i-1], (void*)&adc_result, 2);
     }
 
+    // The pico has a clock, use it as the seed because time always changes
+    // https://raspberrypi.github.io/pico-sdk-doxygen/group__hardware__clocks.html
+
     /**
      * In an attempt to make the rng even more random this will slow down the amount of data the
      * pico can generate. It appears to be more random, but not good enough for FIPS 140-2.
