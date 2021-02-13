@@ -539,7 +539,8 @@ void ep0_out_handler(uint8_t *buf, uint16_t len) {
 }
 
 /**
- * @brief Get random data using the onboard pico ADC.
+ * @brief Get random data using the onboard pico ADC that essentially measure 
+ *        environmental noise because it is assumed that it is not connected to anything.
  *
  * @param buf the buffer to store the random data in
  * @param len the length of the random data in bytes
@@ -563,26 +564,6 @@ void get_random_data(char *buf, uint16_t len) {
         adc_result = adc_read();
         memcpy(&buf[i-1], (void*)&adc_result, 2);
     }
-
-    // The pico has a clock, use it as the seed because time always changes
-    // https://raspberrypi.github.io/pico-sdk-doxygen/group__hardware__clocks.html
-
-    /**
-     * In an attempt to make the rng even more random this will slow down the amount of data the
-     * pico can generate. It appears to be more random, but not good enough for FIPS 140-2.
-     **/ 
-    /**
-    //Use the ADC as a seed to the arm gnu stdlib random number generator
-    srand((int)(adc_read() | (adc_read() << 16)));
-
-    memset(buf, 0, len);
-    int rand_result;
-    for(i = 0; i <= len-4; i=i+4)
-    {
-        rand_result = rand();
-        memcpy(&buf[i], (void*)&rand_result, 4);
-    }
-    **/
 
     gpio_put(25, 0);
 }
