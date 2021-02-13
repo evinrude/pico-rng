@@ -24,7 +24,6 @@ MODULE_VERSION("1.0");
  **/
 #define VENDOR_ID             0x0
 #define PRODUCT_ID            0x4
-#define PICO_RNG_ENTROPY(x)	  (((x) * 8 * 10) >> 5) /* quality: 10/32 */
 
 /**
  * Logger macros
@@ -125,7 +124,7 @@ static int pico_rng_read_data()
 	int actual_length = 0;
 
     // int usb_bulk_msg(struct usb_device *usb_dev, unsigned int pipe, void *data, int len, int *actual_length, int timeout)
-	LOGGER_DEBUG("Calling usb_bulk_msg dev %p, pipe %d, buffer %p, size %d, and timeout %d", \
+	LOGGER_DEBUG("Calling usb_bulk_msg dev %p, pipe %u, buffer %p, size %d, and timeout %d", \
 	        module_data.dev, module_data.pipe, module_data.buffer, module_data.endpoint->wMaxPacketSize, timeout);
 
     retval = usb_bulk_msg(module_data.dev, 
@@ -176,7 +175,7 @@ static int pico_rng_usb_probe(struct usb_interface *interface, const struct usb_
 {
 	int retval = -ENODEV;
 
-    module_data.dev = interface_to_usbdev(interface);
+	module_data.dev = interface_to_usbdev(interface);
 	if(!module_data.dev)
 	{
 		LOGGER_ERR("Unable to locate usb device");
@@ -215,9 +214,6 @@ static int pico_rng_usb_probe(struct usb_interface *interface, const struct usb_
 		LOGGER_ERR("not able to get a minor for this device\n");
 		return -1;
 	}
-
-    // int usb_bulk_msg(struct usb_device *usb_dev, unsigned int pipe, void *data, int len, int *actual_length, int timeout)
-    //retval = usb_bulk_msg(dev, pipe, buffer, 64, &actual_length, 500);
 
 	pico_rng_kthread_start();
 
@@ -261,7 +257,9 @@ static int pico_rng_kthread(void *data)
 		}
 
         LOGGER_DEBUG("Adding hardware randomness\n");
-		add_hwgenerator_randomness(module_data.buffer, bytes_read, PICO_RNG_ENTROPY(bytes_read));
+		// I would not exactly call this rng as trusted, so it will not add entropy, only random bits to the pool
+		// A trusted device would call add_hwgenerator_randomness and credit the entropy pool. For now the credit is 0 while still adding random bits.
+		add_hwgenerator_randomness(module_data.buffer, bytes_read, 0);
 		LOGGER_DEBUG("Randomness added\n");
 	}
 
