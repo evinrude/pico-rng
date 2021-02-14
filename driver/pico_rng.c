@@ -133,14 +133,14 @@ static int pico_rng_usb_probe(struct usb_interface *interface, const struct usb_
 	module_data.dev = interface_to_usbdev(interface);
 	if(!module_data.dev)
 	{
-		LOGGER_ERR("Unable to locate usb device");
+		LOGGER_ERR("Unable to locate usb device\n");
 		return retval;
 	}
 
 	module_data.interface = interface;
 	if(!module_data.interface)
 	{
-		LOGGER_ERR("Invalid interface");
+		LOGGER_ERR("Invalid interface\n");
 		return retval;
 	}
 
@@ -153,7 +153,7 @@ static int pico_rng_usb_probe(struct usb_interface *interface, const struct usb_
 
 	module_data.pipe = usb_rcvbulkpipe(module_data.dev, module_data.endpoint->bEndpointAddress);
 
-	LOGGER_DEBUG("endpoint found %p with pipe %d", module_data.endpoint, module_data.pipe);
+	LOGGER_DEBUG("endpoint found %p with pipe %d\n", module_data.endpoint, module_data.pipe);
 
 	retval = usb_register_dev(module_data.interface, &pico_rng_usb_class);
 	if(retval)
@@ -206,14 +206,14 @@ static ssize_t pico_rng_read(struct file *file, char __user *user_buffer, size_t
     buffer = kmalloc(module_data.endpoint->wMaxPacketSize, GFP_USER);
 	if(!buffer)
 	{
-		LOGGER_ERR("Failed to allocate buffer");
+		LOGGER_ERR("Failed to allocate buffer\n");
 		return -EFAULT;
 	}
 
 	bytes_read = pico_rng_read_data(buffer, module_data.endpoint->wMaxPacketSize);
 	if(!bytes_read)
 	{
-		LOGGER_ERR("Failed to read data");
+		LOGGER_ERR("Failed to read data\n");
 		return -EFAULT;
 	}
 
@@ -239,7 +239,7 @@ static int pico_rng_kthread(void *data)
 	buffer = kmalloc(module_data.endpoint->wMaxPacketSize, GFP_NOWAIT);
 	if(!buffer)
 	{
-		LOGGER_ERR("RNG kthread failed to allocate buffer");
+		LOGGER_ERR("RNG kthread failed to allocate buffer\n");
 		return -EFAULT;
 	}
 

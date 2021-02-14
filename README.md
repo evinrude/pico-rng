@@ -1,7 +1,6 @@
 # Raspberry Pi Pico Random Number Generator
 
-A basic random number generator that generates numbers from enviromental noise with the onboard DAC of the Raspberry Pi Pico. The project uses the Raspberry Pi Pico USB dev_lowlevel as a starting point. The RNG is not meant to be FIPS 140-2 compliant by any means. This is not meant to by used in a production system as a TRNG. Maybe one day the next gen Pico's will include an onboard crypto module.
-
+A basic random number generator that generates numbers from enviromental noise with the onboard DAC of the Raspberry Pi Pico. The project uses the Raspberry Pi Pico USB dev_lowlevel as a starting point. The Pico RNG is not meant to be FIPS 140-2 compliant as a stand-alone device by any means. However it does supply the Linux Kernel with random bits which can be used with the appropriate entropy to supply FIPS 140-2 compliant random numbers. Maybe one day the next gen Pico's will include an onboard crypto module.
 
 ## Project Goals
 * Raspberry Pi Pico firmware generates random numbers as a USB Endpoint.
@@ -60,6 +59,9 @@ You can test Pico RNG firmware with the [pico_rng_test.py](firmware/pico_rng_tes
 # if the kernel module has been installed, then the test tool will use /dev/pico_rng otherwise python's libusb implementation will be used.
 sudo firmware/pico_rng_test.py [--performance]
 ```
+
+You can also test the Kernel's random number pool that contains random numbers from the Pico
+![Pico Random Numbers](pico-rng.gif)
 
 
 # Remove
