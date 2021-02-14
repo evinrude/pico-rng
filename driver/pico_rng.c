@@ -1,6 +1,3 @@
-//TODO Split this file into multiple, there are a few things going on here that need organizaion: usb device, character device, and rng thread.
-//     Move past prototype and put some polish on it.
-
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
