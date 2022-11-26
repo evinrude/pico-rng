@@ -12,6 +12,7 @@
 #include <linux/slab.h>
 #include <linux/kernel.h>
 #include <linux/hw_random.h>
+#include <linux/random.h>
 #include <linux/kthread.h>
 
 MODULE_LICENSE("GPL");
